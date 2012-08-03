@@ -1119,6 +1119,24 @@ main(int argc, char *argv[])
             SOCK_CLEANUP;
             exit(1);
         } else {
+	    /* For a multicast address, let's request membership for it. */
+	    if (snmp_oid_compare(netsnmpUDPDomain, netsnmpUDPDomain_len,
+				 transport->domain, transport->domain_length) == 0) {
+		/* UDPv4, check if it is a multicast address */
+		in_addr_t local;
+		memcpy(&local, transport->local, sizeof(local));
+		if (IN_MULTICAST(ntohl(local))) {
+		    struct ip_mreq mr;
+		    mr.imr_multiaddr.s_addr = local;
+		    mr.imr_interface.s_addr = htonl(INADDR_ANY);
+		    if (setsockopt(transport->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+				   (void *)&mr, sizeof(mr)) < 0) {
+			snmp_log(LOG_ERR, "couldn't register membership - %s", strerror(errno));
+			/* Let's continue. */
+		    }
+		}
+	    }
+
             ss = snmptrapd_add_session(transport);
             if (ss == NULL) {
                 /*
