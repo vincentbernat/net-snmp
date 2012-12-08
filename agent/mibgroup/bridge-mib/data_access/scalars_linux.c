@@ -70,22 +70,8 @@ int
 netsnmp_arch_bridge_scalars_StpDesignatedRoot_get(const char *bridge_name, u_char **value, size_t *varlen)
 {
     static u_char bridgeid[8];
-    int rc;
-    FILE *filep;
-    filep = bridge_sysfs_open(bridge_name, "bridge/root_id");
-
-    if (NULL == filep) return 1;
-
-    rc = fscanf(filep, "%02hhx%02hhx.%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",
-                &bridgeid[0], &bridgeid[1], &bridgeid[2], &bridgeid[3],
-                &bridgeid[4], &bridgeid[5], &bridgeid[6], &bridgeid[7]);
-    fclose(filep);
-
-    if (8 != rc) {
-        DEBUGMSGTL(("access:bridge:bridge_address", "Unable to parse root bridge identifier for %s\n",
-                    bridge_name));
+    if (0 != bridge_sysfs_root_id(bridge_name, bridgeid))
         return 1;
-    }
 
     *value = bridgeid;
     *varlen = 8;

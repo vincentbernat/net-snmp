@@ -161,6 +161,8 @@ typedef struct dot1dStpPortTable_mib_index_s {
  * When your functions are called, you will be passed a
  * dot1dStpPortTable_rowreq_ctx pointer.
  */
+#define DOT1DSTPPORTTABLE_ROW_DELETED 1
+#define DOT1DSTPPORTTABLE_ROW_TRAP    2
 typedef struct dot1dStpPortTable_rowreq_ctx_s {
 
     /** this must be first for container compare to work */

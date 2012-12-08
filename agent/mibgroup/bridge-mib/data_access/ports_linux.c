@@ -70,8 +70,9 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
 {
     netsnmp_container *container = arg;
     dot1dStpPortTable_rowreq_ctx *rowreq_ctx;
-    int rc;
+    int rc, newrow = 0;
 
+    dot1dStpPortTable_mib_index dot1dStpIndex;
     u_long dot1dStpPort;
     u_long dot1dStpPortPriority;
     u_long dot1dStpPortState;
@@ -90,6 +91,7 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
                  port, bridge_name);
         return -1;
     }
+    dot1dStpIndex.dot1dStpPort = dot1dStpPort;
 
     rc = bridge_sysfs_read_port(bridge_name, port, "priority", &dot1dStpPortPriority);
     if (0 != rc) {
@@ -182,7 +184,15 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
     dot1dStpPortDesignatedPort[0] = (tmp & 0xff00) >> 8;
     dot1dStpPortDesignatedPort[1] = (tmp & 0xff);
 
-    rowreq_ctx = dot1dStpPortTable_allocate_rowreq_ctx();
+    /* We need to check if we have to allocate a new row or if we have an existing one. */
+    rowreq_ctx = dot1dStpPortTable_row_find_by_mib_index(&dot1dStpIndex);
+
+    if (NULL == rowreq_ctx) {
+        newrow = 1;
+        rowreq_ctx = dot1dStpPortTable_allocate_rowreq_ctx();
+        DEBUGMSGTL(("access:bridge:bridge_stp", "New port %s for bridge %s\n",
+                    port, bridge_name));
+    }
     if (NULL == rowreq_ctx) {
         snmp_log(LOG_ERR, "memory allocation failed\n");
         return -1;
@@ -194,6 +204,13 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
     }
 
     rowreq_ctx->data.dot1dStpPortPriority = dot1dStpPortPriority;
+    if (!newrow) {
+        if ((rowreq_ctx->data.dot1dStpPortState == DOT1DSTPPORTSTATE_LEARNING &&
+             dot1dStpPortState == DOT1DSTPPORTSTATE_FORWARDING) ||
+            (rowreq_ctx->data.dot1dStpPortState == DOT1DSTPPORTSTATE_FORWARDING &&
+             dot1dStpPortState == DOT1DSTPPORTSTATE_BLOCKING))
+            rowreq_ctx->rowreq_flags |= DOT1DSTPPORTTABLE_ROW_TRAP;
+    }
     rowreq_ctx->data.dot1dStpPortState = dot1dStpPortState;
     rowreq_ctx->data.dot1dStpPortEnable = dot1dStpPortEnable;
     rowreq_ctx->data.dot1dStpPortPathCost = dot1dStpPortPathCost;
@@ -207,6 +224,7 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
     rowreq_ctx->data.dot1dStpPortForwardTransitions = 0; /* not available */
     rowreq_ctx->data.dot1dStpPortPathCost32 = dot1dStpPortPathCost32;
 
+    rowreq_ctx->rowreq_flags &= ~DOT1DSTPPORTTABLE_ROW_DELETED;
     rowreq_ctx->column_exists_flags |= (COLUMN_DOT1DSTPPORT_FLAG |
                                         COLUMN_DOT1DSTPPORTPRIORITY_FLAG |
                                         COLUMN_DOT1DSTPPORTSTATE_FLAG |
@@ -219,7 +237,7 @@ populateStpPortTable(const char *bridge_name, const char *port, void *arg)
 /*                                        COLUMN_DOT1DSTPPORTFORWARDTRANSITIONS_FLAG | */
                                         COLUMN_DOT1DSTPPORTPATHCOST32_FLAG);
 
-    CONTAINER_INSERT(container, rowreq_ctx);
+    if (newrow) CONTAINER_INSERT(container, rowreq_ctx);
     return 0;
 }
 
@@ -304,8 +322,11 @@ netsnmp_access_bridge_BasePortTable_container_load(const char *bridge_name,
 
 int
 netsnmp_access_bridge_StpPortTable_container_load(const char *bridge_name,
-                                                  netsnmp_container *container)
+                                                  netsnmp_container *container,
+                                                  char *root_bridge_id)
 {
+    if (0 != bridge_sysfs_root_id(bridge_name, root_bridge_id))
+        return -1;
     return bridge_sysfs_foreachport(bridge_name, populateStpPortTable, container);
 }
 

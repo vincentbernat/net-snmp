@@ -12,8 +12,11 @@
 
 /* include our parent header */
 #include "dot1dStpPortTable.h"
-#include "../dot1dBridge.h"
 #include "dot1dStpPortTable_data_access.h"
+#include "../dot1dBridge.h"
+#include "../dot1dBridge_notifications.h"
+
+static char _root_bridge_id[8]; /* Current root bridge ID */
 
 /** @ingroup interface
  * @addtogroup data_access data_access: Routines to access data
@@ -56,6 +59,7 @@ dot1dStpPortTable_init_data(dot1dStpPortTable_registration * dot1dStpPortTable_r
     /*
      * TODO:303:o: Initialize dot1dStpPortTable data.
      */
+    memset(_root_bridge_id, 0, 8);
 
     return MFD_SUCCESS;
 } /* dot1dStpPortTable_init_data */
@@ -122,6 +126,15 @@ dot1dStpPortTable_container_init(netsnmp_container **container_ptr_ptr,
      * cache->enabled to 0.
      */
     cache->timeout = DOT1DSTPPORTTABLE_CACHE_TIMEOUT; /* seconds */
+    /* The cache needs to be preloaded and not released before being
+     * refreshed to enable the handling of notifications for
+     * BRIDGE-MIB. We also ask for automatic reload to trigger trap
+     * changes. */
+    cache->flags |= \
+        NETSNMP_CACHE_DONT_FREE_EXPIRED |     \
+        NETSNMP_CACHE_DONT_FREE_BEFORE_LOAD | \
+        NETSNMP_CACHE_DONT_AUTO_RELEASE |     \
+        NETSNMP_CACHE_AUTO_RELOAD;
 } /* dot1dStpPortTable_container_init */
 
 /**
@@ -151,6 +164,36 @@ dot1dStpPortTable_container_shutdown(netsnmp_container *container_ptr)
     }
 
 } /* dot1dStpPortTable_container_shutdown */
+
+static void
+_mark_as_deleted(dot1dStpPortTable_rowreq_ctx * rowreq_ctx,
+                 void *magic)
+{
+    rowreq_ctx->rowreq_flags |= DOT1DSTPPORTTABLE_ROW_DELETED;
+    rowreq_ctx->rowreq_flags &= ~DOT1DSTPPORTTABLE_ROW_TRAP;
+}
+
+static void
+_collect_deleted(dot1dStpPortTable_rowreq_ctx * rowreq_ctx,
+                 void *magic)
+{
+    netsnmp_container *to_delete = magic;
+
+    if (rowreq_ctx->rowreq_flags & DOT1DSTPPORTTABLE_ROW_DELETED)
+        CONTAINER_INSERT(to_delete, rowreq_ctx);
+}
+
+static void
+_collect_traps(dot1dStpPortTable_rowreq_ctx * rowreq_ctx,
+                 void *magic)
+{
+    int *traps = magic;
+
+    if (rowreq_ctx->rowreq_flags & DOT1DSTPPORTTABLE_ROW_TRAP) {
+        (*traps)++;
+        rowreq_ctx->rowreq_flags &= ~DOT1DSTPPORTTABLE_ROW_TRAP;
+    }
+}
 
 /**
  * load initial data
@@ -189,15 +232,58 @@ int
 dot1dStpPortTable_container_load(netsnmp_container *container)
 {
     int count = 0;
+    int traps = 0;
+    char new_root_bridge_id[8];
+    char zero_root_bridge_id[] = {0,0,0,0,0,0,0,0};
 
     if (NULL == bridge_name)
         return MFD_SUCCESS;
 
     DEBUGMSGTL(("verbose:dot1dStpPortTable:dot1dStpPortTable_container_load","called\n"));
 
-    count = netsnmp_access_bridge_StpPortTable_container_load(bridge_name, container);
+    /* We mark all elements as deleted. When loading new values, the
+     * elements will be marked as not being deleted if needed. */
+    CONTAINER_FOR_EACH(container,
+                       (netsnmp_container_obj_func *)_mark_as_deleted,
+                       NULL);
+    count = netsnmp_access_bridge_StpPortTable_container_load(bridge_name, container,
+                                                              new_root_bridge_id);
     if (count < 0)
         return MFD_RESOURCE_UNAVAILABLE;        /* msg already logged */
+
+    /* Delete elements marked for deletion */
+    {
+        netsnmp_container *to_delete = netsnmp_container_find("lifo");
+
+        CONTAINER_FOR_EACH(container,
+                           (netsnmp_container_obj_func *)_collect_deleted,
+                           to_delete);
+
+        while (CONTAINER_SIZE(to_delete)) {
+            dot1dStpPortTable_rowreq_ctx * rowreq_ctx = CONTAINER_FIRST(to_delete);
+            CONTAINER_REMOVE(container, rowreq_ctx);
+            dot1dStpPortTable_release_rowreq_ctx(rowreq_ctx);
+            CONTAINER_REMOVE(to_delete, NULL);
+        }
+        CONTAINER_FREE(to_delete);
+    }
+
+    /* Does the root ID has changed? */
+    if (0 != memcmp(_root_bridge_id, zero_root_bridge_id, 8) &&
+        (0 != memcmp(_root_bridge_id, new_root_bridge_id, 8))) {
+        DEBUGMSGTL(("verbose:dot1dStpPortTable:dot1dStpPortTable","changed root bridge\n"));
+        send_newRoot_trap();
+    } else {
+        /* Maybe something else has changed? */
+        CONTAINER_FOR_EACH(container,
+                           (netsnmp_container_obj_func *)_collect_traps,
+                           &traps);
+        if (traps > 0) {
+            DEBUGMSGTL(("verbose:dot1dStpPortTable:dot1dStpPortTable","changed topology\n"));
+            send_topologyChange_trap();
+        }
+    }
+    memcpy(_root_bridge_id, new_root_bridge_id, 8);
 
     DEBUGMSGT(("verbose:dot1dStpPortTable:dot1dStpPortTable_container_load",
                "inserted %d records\n", count));

@@ -40,7 +40,7 @@ extern "C" {
      * TODO:180:o: Review dot1dStpPortTable cache timeout.
      * The number of seconds before the cache times out
      */
-#define DOT1DSTPPORTTABLE_CACHE_TIMEOUT   30
+#define DOT1DSTPPORTTABLE_CACHE_TIMEOUT   10
 
 void dot1dStpPortTable_container_init(netsnmp_container **container_ptr_ptr,
                              netsnmp_cache *cache);

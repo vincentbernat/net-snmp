@@ -141,3 +141,26 @@ bridge_sysfs_foreachport(const char *bridge, int(*callback)(const char *, const 
     closedir(brif_dir);
     return count;
 }
+
+int
+bridge_sysfs_root_id(const char *bridge, char *bridgeid)
+{
+    int rc;
+    FILE *filep;
+    filep = bridge_sysfs_open(bridge, "bridge/root_id");
+
+    if (NULL == filep) return 1;
+
+    rc = fscanf(filep, "%02hhx%02hhx.%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",
+                &bridgeid[0], &bridgeid[1], &bridgeid[2], &bridgeid[3],
+                &bridgeid[4], &bridgeid[5], &bridgeid[6], &bridgeid[7]);
+    fclose(filep);
+
+    if (8 != rc) {
+        DEBUGMSGTL(("access:bridge:bridge_address", "Unable to parse root bridge identifier for %s\n",
+                    bridge));
+        return 1;
+    }
+
+    return 0;
+}

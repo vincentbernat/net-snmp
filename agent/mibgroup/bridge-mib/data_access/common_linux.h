@@ -9,3 +9,4 @@ int   bridge_sysfs_read_port(const char *bridge, const char *path, const char *p
 int   bridge_sysfs_foreachport(const char *bridge,
                                int(*callback)(const char *, const char *, void *),
                                void*);
+int   bridge_sysfs_root_id(const char *bridge, char *root_bridge_id);
