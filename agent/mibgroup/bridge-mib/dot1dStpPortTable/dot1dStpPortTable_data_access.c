@@ -133,8 +133,7 @@ dot1dStpPortTable_container_init(netsnmp_container **container_ptr_ptr,
     cache->flags |= \
         NETSNMP_CACHE_DONT_FREE_EXPIRED |     \
         NETSNMP_CACHE_DONT_FREE_BEFORE_LOAD | \
-        NETSNMP_CACHE_DONT_AUTO_RELEASE |     \
-        NETSNMP_CACHE_AUTO_RELOAD;
+        NETSNMP_CACHE_DONT_AUTO_RELEASE;
 } /* dot1dStpPortTable_container_init */
 
 /**

@@ -822,6 +822,16 @@ _mfd_dot1dStpPortTable_get_values(netsnmp_mib_handler *handler,
  ***********************************************************************/
 static void _container_free(netsnmp_container *container);
 
+void
+dot1dStpPortTable_cache_reload()
+{
+    DEBUGMSGTL(("dot1dStpPortTable:cache_reload", "triggered\n"));
+    if (NULL != dot1dStpPortTable_if_ctx.cache) {
+        dot1dStpPortTable_if_ctx.cache->valid = 0;
+        netsnmp_cache_check_and_reload(dot1dStpPortTable_if_ctx.cache);
+    }
+}
+
 /**
  * @internal
  */

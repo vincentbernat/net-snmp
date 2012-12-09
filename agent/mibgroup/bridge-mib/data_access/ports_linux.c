@@ -8,6 +8,11 @@
 #include "bridge-mib/dot1dStpPortTable/dot1dStpPortTable.h"
 #include "bridge-mib/dot1dTpPortTable/dot1dTpPortTable.h"
 
+#if defined(HAVE_LINUX_RTNETLINK_H)
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#endif /* HAVE_LINUX_RTNETLINK_H */
+
 /* Stolen from <linux/if_bridge.h> */
 #define BR_STATE_DISABLED   0
 #define BR_STATE_LISTENING  1
@@ -336,3 +341,72 @@ netsnmp_access_bridge_TpPortTable_container_load(const char *bridge_name,
 {
     return bridge_sysfs_foreachport(bridge_name, populateTpPortTable, container);
 }
+
+#ifdef HAVE_LINUX_RTNETLINK_H
+static void _netlink_process(int fd, void *data)
+{
+    int                status;
+    char               buf[16384];
+
+    status = recv(fd, buf, sizeof(buf), 0);
+    if (status < 0) {
+        snmp_log(LOG_ERR,"receive failed\n");
+        return;
+    }
+
+    /* Skip any complex parsing of the message, we don't really
+     * care. Just request a refresh! */
+    dot1dStpPortTable_cache_reload();
+}
+
+void
+netsnmp_access_bridge_StpPortTable_init()
+{
+    struct {
+        struct nlmsghdr nlh;
+        struct rtgenmsg g;
+    } req;
+    struct sockaddr_nl localaddrinfo;
+    int status;
+    int fd = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
+    if (fd < 0) {
+        snmp_log(LOG_ERR, "cannot create netlink socket.\n");
+        return -1;
+    }
+
+    memset(&localaddrinfo, 0, sizeof(struct sockaddr_nl));
+
+    localaddrinfo.nl_family = AF_NETLINK;
+    localaddrinfo.nl_groups = RTNLGRP_LINK;
+
+    if (bind(fd, (struct sockaddr*)&localaddrinfo, sizeof(localaddrinfo)) < 0) {
+        snmp_log(LOG_ERR,"cannot bind to netlink socket.\n");
+        close(fd);
+        return;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.nlh.nlmsg_len = sizeof(req);
+    req.nlh.nlmsg_type = RTM_GETLINK;
+    req.nlh.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+    req.g.rtgen_family = AF_UNSPEC;
+
+    status = send(fd, (void*)&req, sizeof(req), 0);
+    if (status < 0) {
+        snmp_log(LOG_ERR, "send failed\n");
+        close(fd);
+        return;
+    }
+
+    if (register_readfd(fd, _netlink_process, NULL) != 0) {
+        snmp_log(LOG_ERR, "error registering netlink socket\n");
+        close(fd);
+        return;
+    }
+}
+#else
+void
+netsnmp_access_bridge_StpPortTable_init()
+{
+}
+#endif

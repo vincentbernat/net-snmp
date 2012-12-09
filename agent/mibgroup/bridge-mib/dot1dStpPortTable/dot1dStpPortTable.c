@@ -43,6 +43,8 @@ init_dot1dStpPortTable(void)
     /*
      * TODO:300:o: Perform dot1dStpPortTable one-time module initialization.
      */
+
+    netsnmp_access_bridge_StpPortTable_init();
      
     /*
      * here we initialize all the tables we're planning on supporting

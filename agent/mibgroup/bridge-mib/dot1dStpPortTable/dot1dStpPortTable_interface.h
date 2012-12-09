@@ -75,6 +75,7 @@ int dot1dStpPortTable_index_from_oid(netsnmp_index *oid_idx,
  */
 void dot1dStpPortTable_valid_columns_set(netsnmp_column_info *vc);
 
+void dot1dStpPortTable_cache_reload(void);
 
 #ifdef __cplusplus
 }
