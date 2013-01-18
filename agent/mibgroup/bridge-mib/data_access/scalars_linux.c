@@ -141,5 +141,9 @@ netsnmp_arch_bridge_scalars_TpLearnedEntryDiscards_get(const char *bridge_name, 
 int
 netsnmp_arch_bridge_scalars_TpAgingTime_get(const char *bridge_name, u_long *value)
 {
-    return bridge_sysfs_read(bridge_name, "bridge/ageing_time", value);
+    if (bridge_sysfs_read(bridge_name, "bridge/ageing_time", value) == 0) {
+        *value /= 100;
+        return 0;
+    }
+    return -1;
 }
